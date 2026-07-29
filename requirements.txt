@@ -4,3 +4,4 @@ pyromod==3.1
 pycryptodome==3.20.0
 gunicorn 
 flask
+motor==3.6.0

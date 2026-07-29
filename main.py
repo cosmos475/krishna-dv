@@ -10,6 +10,50 @@ from pyromod import listen
 from Crypto.Cipher import AES
 from Crypto.Util.Padding import pad
 import base64
+from motor.motor_asyncio import AsyncIOMotorClient
+
+# --- MongoDB Setup (for owner-configurable branding/caption) ---
+# This is optional infrastructure: if MONGO_URI is unset or the DB is
+# unreachable, branding/caption features silently no-op. Core txt-to-html
+# conversion never depends on Mongo and keeps working regardless.
+_mongo_client = None
+_settings_collection = None
+if MONGO_URI:
+    try:
+        _mongo_client = AsyncIOMotorClient(MONGO_URI, serverSelectionTimeoutMS=5000)
+        _settings_collection = _mongo_client[MONGO_DB_NAME]["bot_settings"]
+    except Exception:
+        _mongo_client = None
+        _settings_collection = None
+
+async def get_bot_settings() -> dict:
+    """Fetch the single settings document. Returns {} on any failure
+    (no Mongo configured, connection error, no document yet)."""
+    if _settings_collection is None:
+        return {}
+    try:
+        doc = await _settings_collection.find_one({"_id": "config"})
+        return doc or {}
+    except Exception:
+        return {}
+
+async def update_bot_settings(fields: dict) -> bool:
+    """Upsert given fields into the single settings document.
+    Returns True on success, False if Mongo is unavailable/errored."""
+    if _settings_collection is None:
+        return False
+    try:
+        await _settings_collection.update_one(
+            {"_id": "config"}, {"$set": fields}, upsert=True
+        )
+        return True
+    except Exception:
+        return False
+
+def is_admin(user_id: int) -> bool:
+    """Owner or configured admins only -- used to gate /setbranding and
+    /setcaption so regular users can't touch bot-wide branding."""
+    return user_id == OWNER_ID or user_id in ADMINS
 
 # --- AES Encryption ---
 def aes_encrypt_auto_prefix(data: str) -> str:
@@ -45,7 +89,11 @@ client = Client("itsgolu_html_bot", api_id=API_ID, api_hash=API_HASH, bot_token=
 
 @client.on_message(filters.command("start") & filters.private)
 async def start_command(_, message: Message):
-    await message.reply_text(
+    settings = await get_bot_settings()
+    branding_text = settings.get("branding_text")
+    branding_link = settings.get("branding_link")
+
+    text = (
         f"🎐 **Welcome {message.from_user.first_name}!**\n"
         "✨ **TXT ➝ HTML Bot** ✨\n"
         "📌 **Features:**\n"
@@ -59,9 +107,109 @@ async def start_command(_, message: Message):
         "🔓 /brutalist → Dark Elegant\n"
         "🔓 /glassmorphism → Glass Effect\n"
         "🔓 /cyberpunk → Soft Pastel\n"
-        "━━━━━━━━━━━━━━━━━━\n"
-        "👑 By: [ITsGOlU](https://t.me/ITSGOLU_OFFICIAL)"
     )
+    # Only append the "By:" line if branding has actually been configured.
+    if branding_text:
+        text += "━━━━━━━━━━━━━━━━━━\n"
+        if branding_link:
+            text += f"👑 [{branding_text}]({branding_link})"
+        else:
+            text += f"👑 {branding_text}"
+
+    await message.reply_text(text)
+
+@client.on_message(filters.command("setbranding") & filters.private)
+async def cmd_setbranding(client: Client, message: Message):
+    user_id = message.from_user.id
+    if not is_admin(user_id):
+        await message.reply("❌ Only the owner/admins can use this command.")
+        return
+    if _settings_collection is None:
+        await message.reply("❌ MongoDB is not configured, so branding can't be saved. Set `MONGO_URI` first.")
+        return
+
+    settings = await get_bot_settings()
+    current_text = settings.get("branding_text")
+    current_link = settings.get("branding_link")
+    if current_text:
+        current_display = f"'{current_text}'" + (f" → {current_link}" if current_link else " (no link)")
+        await message.reply(f"ℹ️ Current branding: {current_display}\n\n📝 Send the new branding text (e.g. `Join Now` or `Made by Alex`). Send `clear` to remove branding entirely.")
+    else:
+        await message.reply("📝 Send the branding text you want to show (e.g. `Join Now` or `Made by Alex`). Send `clear` to cancel.")
+
+    try:
+        text_msg: Message = await client.listen(user_id, timeout=300)
+    except asyncio.TimeoutError:
+        await message.reply("⏰ Timeout! No changes made.")
+        return
+
+    new_text = (text_msg.text or "").strip()
+    if not new_text:
+        await text_msg.reply("❌ Empty text isn't allowed.")
+        return
+    if new_text.lower() == "clear":
+        await update_bot_settings({"branding_text": None, "branding_link": None})
+        await text_msg.reply("✅ Branding removed.")
+        return
+
+    await text_msg.reply("🔗 Now send the channel link for it to be a hyperlink, or send `skip` to show it as plain text (no link).")
+    try:
+        link_msg: Message = await client.listen(user_id, timeout=300)
+    except asyncio.TimeoutError:
+        await message.reply("⏰ Timeout! No changes made.")
+        return
+
+    new_link = (link_msg.text or "").strip()
+    if new_link.lower() == "skip":
+        new_link = None
+    elif not new_link.startswith("http"):
+        await link_msg.reply("❌ That doesn't look like a valid link (must start with `http`). Branding not saved -- run /setbranding again.")
+        return
+
+    ok = await update_bot_settings({"branding_text": new_text, "branding_link": new_link})
+    if ok:
+        preview = f"[{new_text}]({new_link})" if new_link else new_text
+        await link_msg.reply(f"✅ Branding saved! `/start` will now show: 👑 {preview}")
+    else:
+        await link_msg.reply("❌ Failed to save (database error). Please try again.")
+
+@client.on_message(filters.command("setcaption") & filters.private)
+async def cmd_setcaption(client: Client, message: Message):
+    user_id = message.from_user.id
+    if not is_admin(user_id):
+        await message.reply("❌ Only the owner/admins can use this command.")
+        return
+    if _settings_collection is None:
+        await message.reply("❌ MongoDB is not configured, so this can't be saved. Set `MONGO_URI` first.")
+        return
+
+    settings = await get_bot_settings()
+    current_caption = settings.get("caption_name")
+    if current_caption:
+        await message.reply(f"ℹ️ Current caption name: '{current_caption}'\n\n📝 Send the new name to show as \"Made by: X\" on generated HTML files. Send `clear` to remove it.")
+    else:
+        await message.reply("📝 Send the name to show as \"Made by: X\" on generated HTML files. Send `clear` to cancel.")
+
+    try:
+        name_msg: Message = await client.listen(user_id, timeout=300)
+    except asyncio.TimeoutError:
+        await message.reply("⏰ Timeout! No changes made.")
+        return
+
+    new_name = (name_msg.text or "").strip()
+    if not new_name:
+        await name_msg.reply("❌ Empty text isn't allowed.")
+        return
+    if new_name.lower() == "clear":
+        await update_bot_settings({"caption_name": None})
+        await name_msg.reply("✅ Caption name removed. Future files will show just the theme name.")
+        return
+
+    ok = await update_bot_settings({"caption_name": new_name})
+    if ok:
+        await name_msg.reply(f"✅ Saved! Future HTML files will show: Made by: {new_name}")
+    else:
+        await name_msg.reply("❌ Failed to save (database error). Please try again.")
 
 @client.on_message(filters.command("neumorphic") & filters.private)
 async def cmd_neumorphic(client, message: Message): await process_txt_to_html(client, message, "neumorphic")
@@ -101,7 +249,12 @@ async def process_txt_to_html(client: Client, message: Message, theme: str):
         elif theme == "cyberpunk": await extract_links_pastel(file_path, output_path)
         else: raise ValueError("Invalid theme")
 
-        await msg.reply_document(document=output_path, file_name=f"{original_name}.html", caption=f"✅ Theme: `{theme}` | By ITsGOlU")
+        settings = await get_bot_settings()
+        caption_name = settings.get("caption_name")
+        caption = f"✅ Theme: `{theme}`"
+        if caption_name:
+            caption += f" | Made by: {caption_name}"
+        await msg.reply_document(document=output_path, file_name=f"{original_name}.html", caption=caption)
     except Exception as e:
         await msg.reply(f"❌ Error: `{str(e)}`")
     finally:
@@ -345,7 +498,7 @@ async def extract_links_neumorphic(input_file, output_file):
                 video_links_by_subject[sub].append(data)
     total_videos = sum(len(v) for v in video_links_by_subject.values())
     
-    html_content = f"""<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>ITsGOlU</title><link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet"><link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"><style>
+    html_content = f"""<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Neumorphic</title><link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet"><link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"><style>
         :root {{ --bg: #e0e5ec; --card: #e0e5ec; --text: #4a5568; --accent: #6c5ce7; --shadow-light: #ffffff; --shadow-dark: #a3b1c6; }}
         * {{ margin: 0; padding: 0; box-sizing: border-box; font-family: 'Inter', sans-serif; }}
         body {{ background: var(--bg); color: var(--text); padding: 20px; min-height: 100vh; }}
@@ -367,7 +520,7 @@ async def extract_links_neumorphic(input_file, output_file):
         .card i {{ font-size: 1.5rem; color: var(--accent); }}
         .pdf-btn {{ margin-left: auto; padding: 5px 10px; background: var(--accent); color: white; border: none; border-radius: 10px; cursor: pointer; }}
     </style></head><body><div class="container">
-        <div class="header"><h1>ITsGOlU</h1><input type="text" id="searchInput" placeholder="🔍 Search..." onkeyup="searchContent()"></div>
+        <div class="header"><h1>Neumorphic</h1><input type="text" id="searchInput" placeholder="🔍 Search..." onkeyup="searchContent()"></div>
         <div class="tabs"><div class="tab active" onclick="showContent('videos')">Videos</div><div class="tab" onclick="showContent('pdfs')">PDFs</div><div class="tab" onclick="showContent('images')">Images</div></div>
         <div id="videos" class="content active"><div class="grid">"""
     for sub, vids in video_links_by_subject.items():

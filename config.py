@@ -9,3 +9,9 @@ OWNER_ID = int(os.environ.get("OWNER_ID", "0"))
 LOG_CHANNEL = int(os.environ.get("LOG_CHANNEL", "0"))
 
 PORT = int(os.environ.get("PORT", "8080"))
+
+# MongoDB -- used for owner-configurable branding/caption settings.
+# MONGO_URI is required for these features; if unset, branding features
+# are silently disabled (core txt-to-html conversion still works fine).
+MONGO_URI = os.environ.get("MONGO_URI", "")
+MONGO_DB_NAME = os.environ.get("MONGO_DB_NAME", "devpro_bot")
