@@ -341,7 +341,7 @@ COMMON_JS = """
 <script>
     // Tab Switching
     function showContent(tabName) {
-        document.querySelectorAll('.content-section').forEach(s=>s.classList.remove('active'));
+        document.querySelectorAll('.content').forEach(s=>s.classList.remove('active'));
         document.querySelectorAll('.nav-item, .tab').forEach(t=>t.classList.remove('active'));
         document.getElementById(tabName).classList.add('active');
         if(event && event.target) event.target.classList.add('active');
