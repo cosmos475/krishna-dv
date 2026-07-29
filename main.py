@@ -297,17 +297,27 @@ def parse_line(line):
             category = category.strip()
         clean_title = re.sub(r'\[([^\]]+)\]|\(([^)]+)\)', '', clean_title).strip()
 
-    # If no bracket-based subject was found but we have a multi-segment
-    # title (e.g. "Batch || Class - 01 || Real Title"), use the middle
-    # segment (commonly "Class - XX") as the subject for grouping.
-    if subject == "General" and len(segments) >= 2:
+    # If the bracket-based subject repeats across multiple classes (e.g.
+    # "[Number System]" for Class-01, Class-02, Class-03...), merge in the
+    # "Class - XX" segment so each class gets its own group instead of all
+    # of them collapsing into one "Number System" bucket.
+    class_segment = None
+    for seg in segments:
+        if re.match(r'(?i)^class\s*-?\s*\d+', seg.strip()):
+            class_segment = seg.strip()
+            break
+
+    if matches and class_segment:
+        subject = f"{subject} {class_segment}"
+    elif subject == "General" and len(segments) >= 2:
         subject = segments[-2].strip()
 
     if not clean_title:
         clean_title = segments[-1] if segments else "Untitled"
 
-    is_pdf = '.pdf' in url.lower()
-    is_image = any(ext in url.lower() for ext in ['.jpg', '.jpeg', '.png', '.gif', '.webp'])
+    url_path = url.split('?')[0].split('#')[0]
+    is_pdf = url_path.lower().endswith('.pdf')
+    is_image = any(url_path.lower().endswith(ext) for ext in ['.jpg', '.jpeg', '.png', '.gif', '.webp'])
 
     return {
         "subject": subject,
@@ -318,12 +328,20 @@ def parse_line(line):
         "is_image": is_image
     }
 
+def make_subject_id(subject: str, index: int) -> str:
+    """HTML-safe, guaranteed-unique id for a subject group. Using the
+    subject name alone as the id caused duplicate ids (and broken
+    show/hide toggling) whenever two different classes shared the same
+    bracket subject; the index makes every group's id unique."""
+    slug = re.sub(r'[^a-zA-Z0-9]+', '_', subject).strip('_')
+    return f"subj_{index}_{slug}"
+
 # --- Common JS (Modal Player & Search) ---
 COMMON_JS = """
 <script>
     // Tab Switching
     function showContent(tabName) {
-        document.querySelectorAll('.content-section').forEach(s=>s.classList.remove('active'));
+        document.querySelectorAll('.content').forEach(s=>s.classList.remove('active'));
         document.querySelectorAll('.nav-item, .tab').forEach(t=>t.classList.remove('active'));
         document.getElementById(tabName).classList.add('active');
         if(event && event.target) event.target.classList.add('active');
@@ -464,10 +482,11 @@ async def extract_links_minimal(input_file, output_file):
         .pdf-btn {{ margin-left: auto; padding: 6px 14px; background: var(--accent); color: white; border: none; border-radius: 8px; cursor: pointer; font-size: 0.82rem; flex-shrink: 0; }}
     </style></head><body><div class="container">
         <div class="header"><h1>Minimal</h1><input type="text" id="searchInput" placeholder="🔍 Search..." onkeyup="searchContent()"></div>
-        <div class="tabs"><div class="tab active" onclick="showContent('videos')">Videos</div><div class="tab" onclick="showContent('pdfs')">PDFs</div><div class="tab" onclick="showContent('images')">Images</div></div>
+        <div class="tabs"><div class="tab active" onclick="showContent('videos')">Videos</div><div class="tab" onclick="showContent('pdfs')">PDFs</div></div>
         <div id="videos" class="content active"><div class="grid">"""
-    for sub, vids in video_links_by_subject.items():
-        html_content += f'<div class="subject" onclick="toggleVideos(\'{sub}\')">{sub}</div><div id="{sub}" class="video-list">'
+    for idx, (sub, vids) in enumerate(video_links_by_subject.items()):
+        sid = make_subject_id(sub, idx)
+        html_content += f'<div class="subject" onclick="toggleVideos(\'{sid}\')">{sub}</div><div id="{sid}" class="video-list">'
         for v in vids:
             p_url = get_player_url(v['url'])
             html_content += f'<a href="{p_url}" target="_blank" class="card searchable-item"><i class="fas fa-play-circle"></i><span>{v["title"]}</span></a>'
@@ -475,10 +494,7 @@ async def extract_links_minimal(input_file, output_file):
     html_content += """</div></div><div id="pdfs" class="content"><div class="grid">"""
     for p in pdf_links:
         html_content += f'<div class="card searchable-item"><i class="fas fa-file-pdf"></i><span>{p["title"]}</span><button class="pdf-btn" onclick="openPdf(\'{p["url"]}\')">View</button></div>'
-    html_content += """</div></div><div id="images" class="content"><div class="grid">"""
-    for i in image_links:
-        html_content += f'<a href="{i["url"]}" target="_blank" class="card searchable-item"><i class="fas fa-image"></i><span>{i["title"]}</span></a>'
-    html_content += f"""</div></div></div>{COMMON_PDF_MODAL}{COMMON_JS}</body></html>"""
+    html_content += f"""</div></div>{COMMON_PDF_MODAL}{COMMON_JS}</body></html>"""
     with open(output_file, 'w', encoding='utf-8') as file: file.write(html_content)
 
 # --- THEME 2: NEUMORPHIC ---
@@ -521,10 +537,11 @@ async def extract_links_neumorphic(input_file, output_file):
         .pdf-btn {{ margin-left: auto; padding: 5px 10px; background: var(--accent); color: white; border: none; border-radius: 10px; cursor: pointer; }}
     </style></head><body><div class="container">
         <div class="header"><h1>Neumorphic</h1><input type="text" id="searchInput" placeholder="🔍 Search..." onkeyup="searchContent()"></div>
-        <div class="tabs"><div class="tab active" onclick="showContent('videos')">Videos</div><div class="tab" onclick="showContent('pdfs')">PDFs</div><div class="tab" onclick="showContent('images')">Images</div></div>
+        <div class="tabs"><div class="tab active" onclick="showContent('videos')">Videos</div><div class="tab" onclick="showContent('pdfs')">PDFs</div></div>
         <div id="videos" class="content active"><div class="grid">"""
-    for sub, vids in video_links_by_subject.items():
-        html_content += f'<div class="subject" onclick="toggleVideos(\'{sub}\')"><h3>{sub}</h3></div><div id="{sub}" class="video-list">'
+    for idx, (sub, vids) in enumerate(video_links_by_subject.items()):
+        sid = make_subject_id(sub, idx)
+        html_content += f'<div class="subject" onclick="toggleVideos(\'{sid}\')"><h3>{sub}</h3></div><div id="{sid}" class="video-list">'
         for v in vids: 
             p_url = get_player_url(v['url'])
             html_content += f'<a href="{p_url}" target="_blank" class="card searchable-item"><i class="fas fa-play-circle"></i><span>{v["title"]}</span></a>'
@@ -532,10 +549,7 @@ async def extract_links_neumorphic(input_file, output_file):
     html_content += """</div></div><div id="pdfs" class="content"><div class="grid">"""
     for p in pdf_links:
         html_content += f'<div class="card searchable-item"><i class="fas fa-file-pdf"></i><span>{p["title"]}</span><button class="pdf-btn" onclick="openPdf(\'{p["url"]}\')">View</button></div>'
-    html_content += """</div></div><div id="images" class="content"><div class="grid">"""
-    for i in image_links:
-        html_content += f'<a href="{i["url"]}" target="_blank" class="card searchable-item"><i class="fas fa-image"></i><span>{i["title"]}</span></a>'
-    html_content += f"""</div></div></div>{COMMON_PDF_MODAL}{COMMON_JS}</body></html>"""
+    html_content += f"""</div></div>{COMMON_PDF_MODAL}{COMMON_JS}</body></html>"""
     with open(output_file, 'w', encoding='utf-8') as file: file.write(html_content)
 
 # --- THEME 3: DARK ELEGANT ---
@@ -579,10 +593,11 @@ async def extract_links_dark_elegant(input_file, output_file):
         .pdf-btn {{ margin-left: auto; padding: 6px 14px; background: var(--accent); color: #0f0f11; border: none; border-radius: 8px; cursor: pointer; font-size: 0.82rem; font-weight: 600; flex-shrink: 0; }}
     </style></head><body><div class="container">
         <div class="header"><h1>Dark Elegant</h1><input type="text" id="searchInput" placeholder="🔍 Search..." onkeyup="searchContent()"></div>
-        <div class="tabs"><div class="tab active" onclick="showContent('videos')">Videos</div><div class="tab" onclick="showContent('pdfs')">PDFs</div><div class="tab" onclick="showContent('images')">Images</div></div>
+        <div class="tabs"><div class="tab active" onclick="showContent('videos')">Videos</div><div class="tab" onclick="showContent('pdfs')">PDFs</div></div>
         <div id="videos" class="content active"><div class="grid">"""
-    for sub, vids in video_links_by_subject.items():
-        html_content += f'<div class="subject" onclick="toggleVideos(\'{sub}\')">{sub}</div><div id="{sub}" class="video-list">'
+    for idx, (sub, vids) in enumerate(video_links_by_subject.items()):
+        sid = make_subject_id(sub, idx)
+        html_content += f'<div class="subject" onclick="toggleVideos(\'{sid}\')">{sub}</div><div id="{sid}" class="video-list">'
         for v in vids:
             p_url = get_player_url(v['url'])
             html_content += f'<a href="{p_url}" target="_blank" class="card searchable-item"><i class="fas fa-play-circle"></i><span>{v["title"]}</span></a>'
@@ -590,10 +605,7 @@ async def extract_links_dark_elegant(input_file, output_file):
     html_content += """</div></div><div id="pdfs" class="content"><div class="grid">"""
     for p in pdf_links:
         html_content += f'<div class="card searchable-item"><i class="fas fa-file-pdf"></i><span>{p["title"]}</span><button class="pdf-btn" onclick="openPdf(\'{p["url"]}\')">View</button></div>'
-    html_content += """</div></div><div id="images" class="content"><div class="grid">"""
-    for i in image_links:
-        html_content += f'<a href="{i["url"]}" target="_blank" class="card searchable-item"><i class="fas fa-image"></i><span>{i["title"]}</span></a>'
-    html_content += f"""</div></div></div>{COMMON_PDF_MODAL}{COMMON_JS}</body></html>"""
+    html_content += f"""</div></div>{COMMON_PDF_MODAL}{COMMON_JS}</body></html>"""
     with open(output_file, 'w', encoding='utf-8') as file: file.write(html_content)
 
 # --- THEME 4: GLASSMORPHISM ---
@@ -633,10 +645,11 @@ async def extract_links_glassmorphism(input_file, output_file):
     </style></head><body><div class="container">
         <div class="glass" style="padding:20px;margin-bottom:20px;"><h1>Glass View</h1></div>
         <div class="glass" style="padding:15px;margin-bottom:20px;"><input type="text" id="searchInput" placeholder="🔍 Search..." onkeyup="searchContent()"></div>
-        <div class="tabs"><div class="tab active" onclick="showContent('videos')">Videos</div><div class="tab" onclick="showContent('pdfs')">PDFs</div><div class="tab" onclick="showContent('images')">Images</div></div>
+        <div class="tabs"><div class="tab active" onclick="showContent('videos')">Videos</div><div class="tab" onclick="showContent('pdfs')">PDFs</div></div>
         <div id="videos" class="content active"><div class="grid">"""
-    for sub, vids in video_links_by_subject.items():
-        html_content += f'<div class="glass subject" onclick="toggleVideos(\'{sub}\')">{sub}</div><div id="{sub}" class="video-list">'
+    for idx, (sub, vids) in enumerate(video_links_by_subject.items()):
+        sid = make_subject_id(sub, idx)
+        html_content += f'<div class="glass subject" onclick="toggleVideos(\'{sid}\')">{sub}</div><div id="{sid}" class="video-list">'
         for v in vids: 
             p_url = get_player_url(v['url'])
             html_content += f'<a href="{p_url}" target="_blank" class="glass card searchable-item">▶ {v["title"]}</a>'
@@ -644,10 +657,7 @@ async def extract_links_glassmorphism(input_file, output_file):
     html_content += """</div></div><div id="pdfs" class="content"><div class="grid">"""
     for p in pdf_links:
         html_content += f'<div class="glass card searchable-item">📄 {p["title"]}<button class="pdf-btn" onclick="openPdf(\'{p["url"]}\')">View PDF</button></div>'
-    html_content += """</div></div><div id="images" class="content"><div class="grid">"""
-    for i in image_links:
-        html_content += f'<a href="{i["url"]}" target="_blank" class="glass card searchable-item">🖼️ {i["title"]}</a>'
-    html_content += f"""</div></div></div>{COMMON_PDF_MODAL}{COMMON_JS}</body></html>"""
+    html_content += f"""</div></div>{COMMON_PDF_MODAL}{COMMON_JS}</body></html>"""
     with open(output_file, 'w', encoding='utf-8') as file: file.write(html_content)
 
 # --- THEME 5: SOFT PASTEL ---
@@ -691,10 +701,11 @@ async def extract_links_pastel(input_file, output_file):
         .pdf-btn {{ margin-left: auto; padding: 6px 14px; background: var(--accent); color: white; border: none; border-radius: 14px; cursor: pointer; font-size: 0.82rem; font-weight: 600; flex-shrink: 0; }}
     </style></head><body><div class="container">
         <div class="header"><h1>Soft Pastel</h1><input type="text" id="searchInput" placeholder="🔍 Search..." onkeyup="searchContent()"></div>
-        <div class="tabs"><div class="tab active" onclick="showContent('videos')">Videos</div><div class="tab" onclick="showContent('pdfs')">PDFs</div><div class="tab" onclick="showContent('images')">Images</div></div>
+        <div class="tabs"><div class="tab active" onclick="showContent('videos')">Videos</div><div class="tab" onclick="showContent('pdfs')">PDFs</div></div>
         <div id="videos" class="content active"><div class="grid">"""
-    for sub, vids in video_links_by_subject.items():
-        html_content += f'<div class="subject" onclick="toggleVideos(\'{sub}\')">{sub}</div><div id="{sub}" class="video-list">'
+    for idx, (sub, vids) in enumerate(video_links_by_subject.items()):
+        sid = make_subject_id(sub, idx)
+        html_content += f'<div class="subject" onclick="toggleVideos(\'{sid}\')">{sub}</div><div id="{sid}" class="video-list">'
         for v in vids:
             p_url = get_player_url(v['url'])
             html_content += f'<a href="{p_url}" target="_blank" class="card searchable-item"><i class="fas fa-play-circle"></i><span>{v["title"]}</span></a>'
@@ -702,10 +713,7 @@ async def extract_links_pastel(input_file, output_file):
     html_content += """</div></div><div id="pdfs" class="content"><div class="grid">"""
     for p in pdf_links:
         html_content += f'<div class="card searchable-item"><i class="fas fa-file-pdf"></i><span>{p["title"]}</span><button class="pdf-btn" onclick="openPdf(\'{p["url"]}\')">View</button></div>'
-    html_content += """</div></div><div id="images" class="content"><div class="grid">"""
-    for i in image_links:
-        html_content += f'<a href="{i["url"]}" target="_blank" class="card searchable-item"><i class="fas fa-image"></i><span>{i["title"]}</span></a>'
-    html_content += f"""</div></div></div>{COMMON_PDF_MODAL}{COMMON_JS}</body></html>"""
+    html_content += f"""</div></div>{COMMON_PDF_MODAL}{COMMON_JS}</body></html>"""
     with open(output_file, 'w', encoding='utf-8') as file: file.write(html_content)
 
 if __name__ == "__main__":
