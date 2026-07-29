@@ -49,17 +49,16 @@ async def start_command(_, message: Message):
         f"🎐 **Welcome {message.from_user.first_name}!**\n"
         "✨ **TXT ➝ HTML Bot** ✨\n"
         "📌 **Features:**\n"
-        "• Pro Sidebar Layout\n"
+        "• Direct Video/PDF Playback\n"
         "• Fixed Grid & Index\n"
-        "• In-App Player (No new tab)\n"
         "• Smart Search\n"
         "━━━━━━━━━━━━━━━━━━\n"
         "🎨 **Themes:**\n"
-        "🔓 /modern → Pro Sidebar (Fixed)\n"
+        "🔓 /modern → Minimal Light\n"
         "🔓 /neumorphic → Soft Grey\n"
-        "🔓 /brutalist → Bold & Raw\n"
+        "🔓 /brutalist → Dark Elegant\n"
         "🔓 /glassmorphism → Glass Effect\n"
-        "🔓 /cyberpunk → Neon Tech\n"
+        "🔓 /cyberpunk → Soft Pastel\n"
         "━━━━━━━━━━━━━━━━━━\n"
         "👑 By: [ITsGOlU](https://t.me/ITSGOLU_OFFICIAL)"
     )
@@ -96,10 +95,10 @@ async def process_txt_to_html(client: Client, message: Message, theme: str):
 
     try:
         if theme == "neumorphic": await extract_links_neumorphic(file_path, output_path)
-        elif theme == "brutalist": await extract_links_brutalist(file_path, output_path)
-        elif theme == "modern": await extract_links_modern_dark(file_path, output_path)
+        elif theme == "brutalist": await extract_links_dark_elegant(file_path, output_path)
+        elif theme == "modern": await extract_links_minimal(file_path, output_path)
         elif theme == "glassmorphism": await extract_links_glassmorphism(file_path, output_path)
-        elif theme == "cyberpunk": await extract_links_cyberpunk(file_path, output_path) # FIXED TYPO
+        elif theme == "cyberpunk": await extract_links_pastel(file_path, output_path)
         else: raise ValueError("Invalid theme")
 
         await msg.reply_document(document=output_path, file_name=f"{original_name}.html", caption=f"✅ Theme: `{theme}` | By ITsGOlU")
@@ -240,14 +239,13 @@ COMMON_JS = """
         document.getElementById('videoFrame').src = "";
     }
 
-    // PDF Viewer
+    // PDF Viewer -- open directly in a new tab. The Mozilla pdf.js iframe
+    // approach was removed because most PDF hosts block cross-origin
+    // fetches (CORS), which left the viewer blank ("0 of 0" pages).
+    // Opening the link directly lets the browser handle it natively,
+    // exactly like it already does when the URL is opened by itself.
     function openPdf(url) {
-        document.getElementById('pdfModal').style.display = "flex";
-        document.getElementById('pdfFrame').src = "https://mozilla.github.io/pdf.js/web/viewer.html?file=" + encodeURIComponent(url);
-    }
-    function closePdf() {
-        document.getElementById('pdfModal').style.display = "none";
-        document.getElementById('pdfFrame').src = "";
+        window.open(url, '_blank');
     }
     
     // Mobile Sidebar
@@ -266,19 +264,13 @@ COMMON_PLAYER_MODAL = """
 </div>
 """
 
-COMMON_PDF_MODAL = """
-<div id="pdfModal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.95);z-index:9999;flex-direction:column;align-items:center;justify-content:center;">
-    <button onclick="closePdf()" style="position:absolute;top:20px;right:20px;z-index:10000;background:#ef4444;color:white;border:none;padding:10px 20px;border-radius:8px;cursor:pointer;font-weight:bold;">✕ Close PDF</button>
-    <iframe id="pdfFrame" style="width:95%;height:95%;border:none;background:white;"></iframe>
-</div>
-"""
+COMMON_PDF_MODAL = ""  # PDFs now open directly in a new tab (see openPdf), modal no longer needed
 
-# --- THEME 1: MODERN DARK (FIXED SIDEBAR & LAYOUT) ---
-async def extract_links_modern_dark(input_file, output_file):
+# --- THEME 1: MINIMAL LIGHT ---
+async def extract_links_minimal(input_file, output_file):
     video_links_by_subject = {}
     pdf_links = []
     image_links = []
-    
     with open(input_file, 'r', encoding='utf-8', errors='replace') as file:
         for line in file:
             data = parse_line(line)
@@ -294,102 +286,46 @@ async def extract_links_modern_dark(input_file, output_file):
     total_pdfs = len(pdf_links)
     total_images = len(image_links)
 
-    # Fixed CSS for Grid and Sidebar
-    html_content = f"""<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>ITsGOlU Viewer</title><link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet"><link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"><style>
-        :root {{ --primary: #6366f1; --primary-dark: #4f46e5; --secondary: #ec4899; --bg-main: #0f172a; --bg-secondary: #1e293b; --bg-card: #1e293b; --text-primary: #f1f5f9; --text-secondary: #94a3b8; --border: #334155; --sidebar-width: 260px; }}
-        * {{ margin: 0; padding: 0; box-sizing: border-box; }}
-        body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: var(--bg-main); color: var(--text-primary); }}
-        
-        /* Sidebar */
-        .sidebar {{ position: fixed; left: 0; top: 0; width: var(--sidebar-width); height: 100vh; background: var(--bg-secondary); border-right: 1px solid var(--border); padding: 20px; overflow-y: auto; transition: transform 0.3s ease; z-index: 100; }}
-        .sidebar-header {{ margin-bottom: 30px; }}
-        .logo {{ font-size: 1.5rem; font-weight: 800; color: white; text-decoration: none; display: ab flex; align-items: center; gap: 10px; }} /* Fixed Brand */
-        .logo i {{ color: var(--primary); }} 
-        .stats-sidebar {{ display: flex; flex-direction: column; gap: 12px; margin-bottom: 25px; }}
-        .stat-card {{ background: linear-gradient(135deg, var(--primary), var(--secondary)); padding: 15px; border-radius: 12px; display: flex; align-items: center; gap: 12px; }}
-        .stat-icon {{ font-size: 1.8rem; opacity: 0.9; color: white; }}
-        .stat-info {{ flex: 1; }}
-        .stat-num {{ font-size: 1.5rem; font-weight: 700; color: white; }}
-        .stat-label {{ font-size: 0.75rem; color: rgba(255,255,255,0.8); text-transform: uppercase; }}
-        .menu {{ list-style: none; }}
-        .menu-item {{ padding: 12px 15px; border-radius: 10px; margin-bottom: 5px; cursor: pointer; transition: all 0.3s; display: flex; align-items: center; gap: 12px; color: var(--text-secondary); }}
-        .menu-item:hover, .menu-item.active {{ background: var(--bg-card); color: var(--primary); }}
-        
-        /* Main Content */
-        .main-content {{ margin-left: var(--sidebar-width); padding: 30px; min-height: 100vh; }} /* Fixed Margin */
-        .top-bar {{ background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 15px; padding: 20px; margin-bottom: 30px; display: flex; justify-content: space-between; align-items: center; gap: 20px; flex-wrap: wrap; }}
-        .breadcrumb {{ display: flex; gap: 8px; align-items: center; color: var(--text-secondary); font-size: 1.1rem; font-weight: 600; }}
-        .search-container {{ flex: 1; max-width: 400px; }}
-        #searchInput {{ width: 100%; padding: 12px 45px 12px 20px; border: 1px solid var(--border); border-radius: 25px; background: var(--bg-card); color: var(--text-primary); outline: none; }}
-        #searchInput:focus {{ border-color: var(--primary); }}
-        
-        /* Grid & Cards */
-        .content-section {{ display: none; }}
-        .content-section.active {{ display: block; }}
-        .grid {{ display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 20px; }} /* Fixed Grid */
-        .subject-card {{ background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; padding: 20px; cursor: pointer; transition: all 0.3s; display: flex; justify-content: space-between; align-items: center; }}
-        .subject-card:hover {{ transform: translateY(-3px); border-color: var(--primary); }}
-        .subject-title {{ font-size: 1.1rem; font-weight: 600; color: var(--text-primary); }}
-        .subject-count {{ background: linear-gradient(135deg, var(--primary), var(--secondary)); color: white; border-radius: 20px; padding: 4px 12px; font-size: 0.8rem; font-weight: 600; }}
-        .video-grid {{ display: none; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 20px; margin-top: 20px; }} /* Corrected Video Grid */
-        .video-grid.active {{ display: grid; }}
-        
-        /* Video Card with Player Button */
-        .card {{ background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; padding: 15px; display: flex; align-items: center; gap: 15px; text-decoration: none; color: var(--text-primary); transition: all 0.3s; position: relative; }}
-        .card:hover {{ border-color: var(--primary); transform: translateY(-3px); }}
-        .card-icon {{ width: 36px; height: 36px; background: linear-gradient(135deg, var(--primary), var(--secondary)); border-radius: 8px; display: flex; align-items: center; justify-content: center; color: white; flex-shrink: 0; }}
-        .card-content {{ flex: 1; overflow: hidden; }}
-        .card-title {{ font-weight: 500; font-size: 0.95rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }}
-        .card-meta {{ color: var(--text-secondary); font-size: 0.75rem; }}
-        .play-btn {{ background: var(--primary); color: white; padding: 5px 10px; border-radius: 6px; font-size: 0.8rem; cursor: pointer; border: none; }}
-        .pdf-btn {{ background: var(--secondary); color: white; padding: 5px 10px; border-radius: 6px; font-size: 0.8rem; cursor: pointer; border: none; }}
-        
-        /* Mobile */
-        .mobile-toggle {{ display: none; position: fixed; bottom: 20px; right: 20px; width: 50px; height: 50px; background: linear-gradient(135deg, var(--primary), var(--secondary)); border-radius: 50%; align-items: center; justify-content: center; color: white; font-size: 1.3rem; cursor: pointer; z-index: 101; }}
-        @media (max-width: 968px) {{ .sidebar {{ transform: translateX(-100%); }} .sidebar.active {{ transform: translateX(0); }} .main-content {{ margin-left: 0; }} .mobile-toggle {{ display: flex; }} }}
-    </style></head><body>
-    <div class="sidebar" id="sidebar">
-        <div class="sidebar-header"><a href="#" class="logo"><i class="fas fa-code"></i> ITsGOlU</a></div> <!-- Fixed Brand Name -->
-        <div class="stats-sidebar">
-            <div class="stat-card"><div class="stat-icon"><i class="fas fa-video"></i></div><div class="stat-info"><div class="stat-num">{total_videos}</div><div class="stat-label">Videos</div></div></div>
-            <div class="stat-card"><div class="stat-icon"><i class="fas fa-file-pdf"></i></div><div class="stat-info"><div class="stat-num">{total_pdfs}</div><div class="stat-label">PDFs</div></div></div>
-            <div class="stat-card"><div class="stat-icon"><i class="fas fa-image"></i></div><div class="stat-info"><div class="stat-num">{total_images}</div><div class="stat-label">Images</div></div></div>
-        </div>
-        <ul class="menu">
-            <li class="menu-item active" onclick="showContent('videos')"><i class="fas fa-play"></i> Videos</li>
-            <li class="menu-item" onclick="showContent('pdfs')"><i class="fas fa-file-pdf"></i> PDFs</li>
-            <li class="menu-item" onclick="showContent('images')"><i class="fas fa-image"></i> Images</li>
-        </ul>
-    </div>
-    <div class="mobile-toggle" onclick="toggleSidebar()"><i class="fas fa-bars"></i></div>
-    <div class="main-content">
-        <div class="top-bar">
-            <div class="breadcrumb"><span class="active">Videos</span></div>
-            <div class="search-container"><input type="text" id="searchInput" placeholder="Search content..." onkeyup="searchContent()"></div>
-        </div>
-        
-        <section id="videos" class="content-section active"><div class="grid">"""
+    html_content = f"""<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Minimal</title><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet"><link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"><style>
+        :root {{ --bg: #ffffff; --surface: #f7f8fa; --border: #e5e7eb; --text: #111827; --text-muted: #6b7280; --accent: #2563eb; }}
+        * {{ margin: 0; padding: 0; box-sizing: border-box; font-family: 'Inter', sans-serif; }}
+        body {{ background: var(--bg); color: var(--text); padding: 24px; min-height: 100vh; }}
+        .container {{ max-width: 1100px; margin: 0 auto; }}
+        .header {{ text-align: center; margin-bottom: 28px; }}
+        h1 {{ font-size: 2.2rem; font-weight: 700; letter-spacing: -0.5px; margin-bottom: 18px; }}
+        #searchInput {{ width: 100%; max-width: 420px; padding: 13px 20px; border-radius: 12px; border: 1px solid var(--border); outline: none; background: var(--surface); color: var(--text); font-size: 0.95rem; }}
+        #searchInput:focus {{ border-color: var(--accent); }}
+        .tabs {{ display: flex; justify-content: center; gap: 10px; margin-bottom: 28px; }}
+        .tab {{ padding: 9px 22px; border-radius: 10px; cursor: pointer; font-weight: 500; font-size: 0.9rem; background: var(--surface); border: 1px solid var(--border); transition: 0.2s; }}
+        .tab.active {{ background: var(--accent); border-color: var(--accent); color: #fff; }}
+        .content {{ display: none; }}
+        .content.active {{ display: block; }}
+        .grid {{ display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 14px; }}
+        .subject {{ padding: 18px 20px; border-radius: 14px; cursor: pointer; margin-bottom: 14px; background: var(--surface); border: 1px solid var(--border); font-weight: 600; }}
+        .video-list {{ display: none; grid-column: 1 / -1; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 14px; }}
+        .video-list.active {{ display: grid; }}
+        .card {{ padding: 16px 18px; border-radius: 12px; background: var(--bg); border: 1px solid var(--border); transition: 0.2s; display: flex; align-items: center; gap: 14px; text-decoration: none; color: inherit; }}
+        .card:hover {{ border-color: var(--accent); background: var(--surface); }}
+        .card i {{ font-size: 1.2rem; color: var(--accent); flex-shrink: 0; }}
+        .card span {{ font-size: 0.92rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }}
+        .pdf-btn {{ margin-left: auto; padding: 6px 14px; background: var(--accent); color: white; border: none; border-radius: 8px; cursor: pointer; font-size: 0.82rem; flex-shrink: 0; }}
+    </style></head><body><div class="container">
+        <div class="header"><h1>Minimal</h1><input type="text" id="searchInput" placeholder="🔍 Search..." onkeyup="searchContent()"></div>
+        <div class="tabs"><div class="tab active" onclick="showContent('videos')">Videos</div><div class="tab" onclick="showContent('pdfs')">PDFs</div><div class="tab" onclick="showContent('images')">Images</div></div>
+        <div id="videos" class="content active"><div class="grid">"""
     for sub, vids in video_links_by_subject.items():
-        html_content += f'<div class="subject-card" onclick="toggleVideos(\'{sub}\')"><div class="subject-title">{sub}</div><div class="subject-count"><span style="margin-right:5px">{len(vids)}</span><i class="fas fa-chevron-down" style="font-size:0.8rem;transition:0.3s"></i></div></div><div id="{sub}" class="video-grid">'
-        for v in vids: 
+        html_content += f'<div class="subject" onclick="toggleVideos(\'{sub}\')">{sub}</div><div id="{sub}" class="video-list">'
+        for v in vids:
             p_url = get_player_url(v['url'])
-            cat = f"• {v['category']}" if v['category'] else ""
-            html_content += f'<div class="card searchable-item"><div class="card-icon"><i class="fas fa-play"></i></div><div class="card-content"><div class="card-title">{v["title"]}</div><div class="card-meta">Video {cat}</div></div><button class="play-btn" onclick="openPlayer(\'{p_url}\')">▶ Play</button></div>'
+            html_content += f'<a href="{p_url}" target="_blank" class="card searchable-item"><i class="fas fa-play-circle"></i><span>{v["title"]}</span></a>'
         html_content += '</div>'
-    html_content += """</div></section>
-        
-        <section id="pdfs" class="content-section"><div class="grid">"""
+    html_content += """</div></div><div id="pdfs" class="content"><div class="grid">"""
     for p in pdf_links:
-        html_content += f'<div class="card searchable-item"><div class="card-icon"><i class="fas fa-file-pdf"></i></div><div class="card-content"><div class="card-title">{p["title"]}</div><div class="card-meta">PDF Document</div></div><button class="pdf-btn" onclick="openPdf(\'{p["url"]}\')">View</button></div>'
-    html_content += """</div></section>
-        
-        <section id="images" class="content-section"><div class="grid">"""
+        html_content += f'<div class="card searchable-item"><i class="fas fa-file-pdf"></i><span>{p["title"]}</span><button class="pdf-btn" onclick="openPdf(\'{p["url"]}\')">View</button></div>'
+    html_content += """</div></div><div id="images" class="content"><div class="grid">"""
     for i in image_links:
-        html_content += f'<a href="{i["url"]}" target="_blank" class="card searchable-item"><div class="card-icon"><i class="fas fa-image"></i></div><div class="card-content"><div class="card-title">{i["title"]}</div><div class="card-meta">Image</div></div></a>'
-    html_content += f"""</div></section>
-    </div>
-    {COMMON_PLAYER_MODAL}{COMMON_PDF_MODAL}{COMMON_JS}
-    </body></html>"""
+        html_content += f'<a href="{i["url"]}" target="_blank" class="card searchable-item"><i class="fas fa-image"></i><span>{i["title"]}</span></a>'
+    html_content += f"""</div></div></div>{COMMON_PDF_MODAL}{COMMON_JS}</body></html>"""
     with open(output_file, 'w', encoding='utf-8') as file: file.write(html_content)
 
 # --- THEME 2: NEUMORPHIC ---
@@ -449,8 +385,8 @@ async def extract_links_neumorphic(input_file, output_file):
     html_content += f"""</div></div></div>{COMMON_PDF_MODAL}{COMMON_JS}</body></html>"""
     with open(output_file, 'w', encoding='utf-8') as file: file.write(html_content)
 
-# --- THEME 3: BRUTALIST ---
-async def extract_links_brutalist(input_file, output_file):
+# --- THEME 3: DARK ELEGANT ---
+async def extract_links_dark_elegant(input_file, output_file):
     video_links_by_subject = {}
     pdf_links = []
     image_links = []
@@ -464,41 +400,46 @@ async def extract_links_brutalist(input_file, output_file):
                 sub = data['subject']
                 if sub not in video_links_by_subject: video_links_by_subject[sub] = []
                 video_links_by_subject[sub].append(data)
-    
-    html_content = f"""<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>BRUTALIST</title><link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&display=swap" rel="stylesheet"><style>
-        *{{margin:0;padding:0;box-sizing:border-box;font-family:'Space Mono',monospace;}}
-        body{{background:#000;color:#fff;padding:20px;}}
-        .container{{max-width:1100px;margin:0 auto;border:5px solid #fff;padding:20px;}}
-        h1{{font-size:3rem;text-transform:uppercase;letter-spacing:-2px;margin-bottom:20px;text-align:center;}}
-        #searchInput{{width:100%;background:#000;border:2px solid #fff;color:#fff;padding:15px;font-size:1.2rem;margin-bottom:20px;font-family:'Space Mono';}}
-        .tabs{{display:flex;gap:10px;margin-bottom:30px;flex-wrap:wrap;}}
-        .tab{{background:#fff;color:#000;padding:10px 20px;border:2px solid #fff;cursor:pointer;font-weight:bold;text-transform:uppercase;}}
-        .tab.active{{background:#000;color:#fff;}}
-        .content{{display:none;}}
-        .content.active{{display:block;}}
-        .grid{{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:20px;}}
-        .card{{background:#fff;color:#000;padding:20px;border:2px solid #fff;text-decoration:none;display:block;}}
-        .subject{{background:transparent;border:3px solid #fff;padding:20px;margin-bottom:20px;cursor:pointer;text-transform:uppercase;font-size:1.5rem;font-weight:bold;}}
-        .video-list{{display:none;grid-column:1/-1;}}
-        .video-list.active{{display:grid;}}
-        .pdf-btn{{display:block;margin-top:10px;background:#000;color:#fff;padding:5px;border:2px solid #fff;cursor:pointer;text-align:center;}}
+
+    html_content = f"""<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Dark Elegant</title><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet"><link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"><style>
+        :root {{ --bg: #0f0f11; --surface: #1a1a1d; --border: #2a2a2e; --text: #f4f4f5; --text-muted: #9a9aa0; --accent: #d4af37; }}
+        * {{ margin: 0; padding: 0; box-sizing: border-box; font-family: 'Inter', sans-serif; }}
+        body {{ background: var(--bg); color: var(--text); padding: 24px; min-height: 100vh; }}
+        .container {{ max-width: 1100px; margin: 0 auto; }}
+        .header {{ text-align: center; margin-bottom: 28px; }}
+        h1 {{ font-size: 2.3rem; font-weight: 700; letter-spacing: 0.5px; margin-bottom: 18px; color: var(--accent); }}
+        #searchInput {{ width: 100%; max-width: 420px; padding: 13px 20px; border-radius: 10px; border: 1px solid var(--border); outline: none; background: var(--surface); color: var(--text); font-size: 0.95rem; }}
+        #searchInput:focus {{ border-color: var(--accent); }}
+        .tabs {{ display: flex; justify-content: center; gap: 10px; margin-bottom: 28px; }}
+        .tab {{ padding: 9px 22px; border-radius: 8px; cursor: pointer; font-weight: 500; font-size: 0.9rem; background: var(--surface); border: 1px solid var(--border); transition: 0.2s; }}
+        .tab.active {{ background: var(--accent); border-color: var(--accent); color: #0f0f11; font-weight: 700; }}
+        .content {{ display: none; }}
+        .content.active {{ display: block; }}
+        .grid {{ display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 14px; }}
+        .subject {{ padding: 18px 20px; border-radius: 10px; cursor: pointer; margin-bottom: 14px; background: var(--surface); border: 1px solid var(--border); font-weight: 600; }}
+        .video-list {{ display: none; grid-column: 1 / -1; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 14px; }}
+        .video-list.active {{ display: grid; }}
+        .card {{ padding: 16px 18px; border-radius: 10px; background: var(--surface); border: 1px solid var(--border); transition: 0.2s; display: flex; align-items: center; gap: 14px; text-decoration: none; color: inherit; }}
+        .card:hover {{ border-color: var(--accent); }}
+        .card i {{ font-size: 1.2rem; color: var(--accent); flex-shrink: 0; }}
+        .card span {{ font-size: 0.92rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); }}
+        .pdf-btn {{ margin-left: auto; padding: 6px 14px; background: var(--accent); color: #0f0f11; border: none; border-radius: 8px; cursor: pointer; font-size: 0.82rem; font-weight: 600; flex-shrink: 0; }}
     </style></head><body><div class="container">
-        <h1>BRUTALIST // DATA</h1>
-        <input type="text" id="searchInput" placeholder="SEARCH_DATA..." onkeyup="searchContent()">
-        <div class="tabs"><div class="tab active" onclick="showContent('videos')">VIDEOS</div><div class="tab" onclick="showContent('pdfs')">PDFS</div><div class="tab" onclick="showContent('images')">IMAGES</div></div>
+        <div class="header"><h1>Dark Elegant</h1><input type="text" id="searchInput" placeholder="🔍 Search..." onkeyup="searchContent()"></div>
+        <div class="tabs"><div class="tab active" onclick="showContent('videos')">Videos</div><div class="tab" onclick="showContent('pdfs')">PDFs</div><div class="tab" onclick="showContent('images')">Images</div></div>
         <div id="videos" class="content active"><div class="grid">"""
     for sub, vids in video_links_by_subject.items():
         html_content += f'<div class="subject" onclick="toggleVideos(\'{sub}\')">{sub}</div><div id="{sub}" class="video-list">'
-        for v in vids: 
+        for v in vids:
             p_url = get_player_url(v['url'])
-            html_content += f'<a href="{p_url}" target="_blank" class="card searchable-item">> {v["title"]}</a>'
+            html_content += f'<a href="{p_url}" target="_blank" class="card searchable-item"><i class="fas fa-play-circle"></i><span>{v["title"]}</span></a>'
         html_content += '</div>'
     html_content += """</div></div><div id="pdfs" class="content"><div class="grid">"""
     for p in pdf_links:
-        html_content += f'<div class="card searchable-item">> {p["title"]}<div class="pdf-btn" onclick="openPdf(\'{p["url"]}\')">[ VIEW PDF ]</div></div>'
+        html_content += f'<div class="card searchable-item"><i class="fas fa-file-pdf"></i><span>{p["title"]}</span><button class="pdf-btn" onclick="openPdf(\'{p["url"]}\')">View</button></div>'
     html_content += """</div></div><div id="images" class="content"><div class="grid">"""
     for i in image_links:
-        html_content += f'<a href="{i["url"]}" target="_blank" class="card searchable-item">> {i["title"]}</a>'
+        html_content += f'<a href="{i["url"]}" target="_blank" class="card searchable-item"><i class="fas fa-image"></i><span>{i["title"]}</span></a>'
     html_content += f"""</div></div></div>{COMMON_PDF_MODAL}{COMMON_JS}</body></html>"""
     with open(output_file, 'w', encoding='utf-8') as file: file.write(html_content)
 
@@ -556,8 +497,8 @@ async def extract_links_glassmorphism(input_file, output_file):
     html_content += f"""</div></div></div>{COMMON_PDF_MODAL}{COMMON_JS}</body></html>"""
     with open(output_file, 'w', encoding='utf-8') as file: file.write(html_content)
 
-# --- THEME 5: CYBERPUNK ---
-async def extract_links_cyberpunk(input_file, output_file):
+# --- THEME 5: SOFT PASTEL ---
+async def extract_links_pastel(input_file, output_file):
     video_links_by_subject = {}
     pdf_links = []
     image_links = []
@@ -572,40 +513,45 @@ async def extract_links_cyberpunk(input_file, output_file):
                 if sub not in video_links_by_subject: video_links_by_subject[sub] = []
                 video_links_by_subject[sub].append(data)
 
-    html_content = f"""<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>CYBERPUNK</title><link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700&display=swap" rel="stylesheet"><style>
-        body{{background:#050505;color:#00ff41;font-family:'Orbitron',sans-serif;padding:20px;}}
-        .container{{max-width:1100px;margin:0 auto;border:2px solid #00ff41;box-shadow:0 0 10px #00ff41;padding:20px;}}
-        h1{{text-align:center;color:#00ff41;text-shadow:0 0 5px #00ff41;}}
-        #searchInput{{width:100%;background:#000;border:2px solid #00ff41;color:#00ff41;padding:15px;margin-bottom:20px;font-family:'Orbitron';}}
-        .tabs{{display:flex;gap:20px;margin-bottom:30px;}}
-        .tab{{border:2px solid #00ff41;padding:10px 20px;cursor:pointer;transition:0.3s;}}
-        .tab.active{{background:#00ff41;color:#000;}}
-        .content{{display:none;}}
-        .content.active{{display:block;}}
-        .grid{{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:20px;}}
-        .card{{border:1px solid #00ff41;padding:15px;text-decoration:none;color:#00ff41;display:block;transition:0.3s;}}
-        .card:hover{{background:rgba(0,255,65,0.1);}}
-        .subject{{font-size:1.2rem;margin-bottom:20px;padding:10px;border-bottom:1px solid #00ff41;cursor:pointer;}}
-        .video-list{{display:none;grid-column:1/-1;}}
-        .video-list.active{{display:grid;}}
-        .pdf-btn{{display:block;margin-top:10px;color:#ff0055;border:1px solid #ff0055;padding:5px;text-align:center;cursor:pointer;}}
+    html_content = f"""<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Soft Pastel</title><link href="https://fonts.googleapis.com/css2?family=Quicksand:wght@400;500;600;700&display=swap" rel="stylesheet"><link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"><style>
+        :root {{ --bg: #fdfbff; --surface: #f4effa; --border: #e8ddf5; --text: #3f3355; --text-muted: #8a7fa3; --accent: #9b6bd6; }}
+        * {{ margin: 0; padding: 0; box-sizing: border-box; font-family: 'Quicksand', sans-serif; }}
+        body {{ background: var(--bg); color: var(--text); padding: 24px; min-height: 100vh; }}
+        .container {{ max-width: 1100px; margin: 0 auto; }}
+        .header {{ text-align: center; margin-bottom: 28px; }}
+        h1 {{ font-size: 2.4rem; font-weight: 700; margin-bottom: 18px; color: var(--accent); }}
+        #searchInput {{ width: 100%; max-width: 420px; padding: 13px 20px; border-radius: 20px; border: 1.5px solid var(--border); outline: none; background: var(--surface); color: var(--text); font-size: 0.95rem; font-family: 'Quicksand', sans-serif; }}
+        #searchInput:focus {{ border-color: var(--accent); }}
+        .tabs {{ display: flex; justify-content: center; gap: 10px; margin-bottom: 28px; }}
+        .tab {{ padding: 9px 22px; border-radius: 16px; cursor: pointer; font-weight: 600; font-size: 0.9rem; background: var(--surface); border: 1.5px solid var(--border); transition: 0.2s; }}
+        .tab.active {{ background: var(--accent); border-color: var(--accent); color: #fff; }}
+        .content {{ display: none; }}
+        .content.active {{ display: block; }}
+        .grid {{ display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 14px; }}
+        .subject {{ padding: 18px 20px; border-radius: 18px; cursor: pointer; margin-bottom: 14px; background: var(--surface); border: 1.5px solid var(--border); font-weight: 600; }}
+        .video-list {{ display: none; grid-column: 1 / -1; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 14px; }}
+        .video-list.active {{ display: grid; }}
+        .card {{ padding: 16px 18px; border-radius: 16px; background: var(--surface); border: 1.5px solid var(--border); transition: 0.2s; display: flex; align-items: center; gap: 14px; text-decoration: none; color: inherit; }}
+        .card:hover {{ border-color: var(--accent); background: #fff; }}
+        .card i {{ font-size: 1.2rem; color: var(--accent); flex-shrink: 0; }}
+        .card span {{ font-size: 0.92rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }}
+        .pdf-btn {{ margin-left: auto; padding: 6px 14px; background: var(--accent); color: white; border: none; border-radius: 14px; cursor: pointer; font-size: 0.82rem; font-weight: 600; flex-shrink: 0; }}
     </style></head><body><div class="container">
-        <h1>CYBER_VAULT</h1>
-        <input type="text" id="searchInput" placeholder="SEARCH_SYSTEM..." onkeyup="searchContent()">
-        <div class="tabs"><div class="tab active" onclick="showContent('videos')">VIDEOS</div><div class="tab" onclick="showContent('pdfs')">PDFS</div><div class="tab" onclick="showContent('images')">IMAGES</div></div>
+        <div class="header"><h1>Soft Pastel</h1><input type="text" id="searchInput" placeholder="🔍 Search..." onkeyup="searchContent()"></div>
+        <div class="tabs"><div class="tab active" onclick="showContent('videos')">Videos</div><div class="tab" onclick="showContent('pdfs')">PDFs</div><div class="tab" onclick="showContent('images')">Images</div></div>
         <div id="videos" class="content active"><div class="grid">"""
     for sub, vids in video_links_by_subject.items():
-        html_content += f'<div class="subject" onclick="toggleVideos(\'{sub}\')">> {sub}</div><div id="{sub}" class="video-list">'
-        for v in vids: 
+        html_content += f'<div class="subject" onclick="toggleVideos(\'{sub}\')">{sub}</div><div id="{sub}" class="video-list">'
+        for v in vids:
             p_url = get_player_url(v['url'])
-            html_content += f'<a href="{p_url}" target="_blank" class="card searchable-item">> {v["title"]}</a>'
+            html_content += f'<a href="{p_url}" target="_blank" class="card searchable-item"><i class="fas fa-play-circle"></i><span>{v["title"]}</span></a>'
         html_content += '</div>'
     html_content += """</div></div><div id="pdfs" class="content"><div class="grid">"""
     for p in pdf_links:
-        html_content += f'<div class="card searchable-item">> {p["title"]}<div class="pdf-btn" onclick="openPdf(\'{p["url"]}\')">[VIEW_DOC]</div></div>'
+        html_content += f'<div class="card searchable-item"><i class="fas fa-file-pdf"></i><span>{p["title"]}</span><button class="pdf-btn" onclick="openPdf(\'{p["url"]}\')">View</button></div>'
     html_content += """</div></div><div id="images" class="content"><div class="grid">"""
     for i in image_links:
-        html_content += f'<a href="{i["url"]}" target="_blank" class="card searchable-item">> {i["title"]}</a>'
+        html_content += f'<a href="{i["url"]}" target="_blank" class="card searchable-item"><i class="fas fa-image"></i><span>{i["title"]}</span></a>'
     html_content += f"""</div></div></div>{COMMON_PDF_MODAL}{COMMON_JS}</body></html>"""
     with open(output_file, 'w', encoding='utf-8') as file: file.write(html_content)
 
